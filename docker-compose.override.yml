@@ -1,0 +1,18 @@
+# =============================================================================
+# Override khusus development LOKAL.
+# `docker compose` otomatis menggabungkan file ini dengan docker-compose.yml.
+# JANGAN di-deploy ke Coolify (di dashboard pilih docker-compose.yml saja).
+#
+# Fungsi: buka port 80 frontend (dan opsional 3306 MySQL) ke host supaya bisa
+# diakses dari browser di laptop / DBeaver.
+# =============================================================================
+
+services:
+  frontend:
+    ports:
+      - "8080:80"   # http://localhost:8080 -> Nginx SPA
+
+  # Uncomment jika ingin koneksi langsung ke MySQL dari host (DBeaver, dll.)
+  # mysql:
+  #   ports:
+  #     - "3307:3306"

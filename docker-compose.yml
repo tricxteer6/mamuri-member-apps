@@ -1,0 +1,101 @@
+# =============================================================================
+# Mamuri Member Area – Docker Compose untuk Coolify
+# -----------------------------------------------------------------------------
+# Tiga service:
+#   1. mysql     -> database (internal, tidak di-expose ke internet)
+#   2. backend   -> Express API Node.js (internal, di-proxy oleh frontend)
+#   3. frontend  -> Nginx + static SPA, jadi entrypoint publik
+#
+# Cara pakai di Coolify:
+#   - "New Resource" -> "Docker Compose Empty" -> hubungkan repo ini
+#   - Set domain pada service `frontend` (Coolify auto-set label Traefik)
+#   - Set semua environment variable yang dibutuhkan (lihat .env.example)
+# =============================================================================
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD wajib diisi}
+      MYSQL_DATABASE: ${DB_NAME:-mamuri_memberarea}
+      MYSQL_USER: ${DB_USER:-mamuri}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD wajib diisi}
+    command:
+      - --default-authentication-plugin=caching_sha2_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    expose:
+      - "3306"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-mamuri}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-mamuri_memberarea}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET wajib diisi}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      ADMIN_NAME: ${ADMIN_NAME:-Admin Mamuri}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL wajib diisi}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD wajib diisi}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+    volumes:
+      - backend_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    expose:
+      - "5000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Frontend memanggil API lewat path relatif `/api` → di-proxy Nginx ke service `backend`.
+        # Ganti ke URL absolut (mis. https://api.example.com/api) bila API berada di domain lain.
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_PUBLIC_ORIGIN: ${VITE_PUBLIC_ORIGIN:-}
+        VITE_OFFICE_ADDRESS: ${VITE_OFFICE_ADDRESS:-}
+        VITE_OFFICE_MAP_EMBED_URL: ${VITE_OFFICE_MAP_EMBED_URL:-}
+        VITE_OFFICE_MAP_LINK: ${VITE_OFFICE_MAP_LINK:-}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # Coolify membaca port di sini lalu otomatis pasang label Traefik untuk
+    # domain yang diset di dashboard. Tidak perlu binding `ports:` ke host.
+    expose:
+      - "80"
+
+volumes:
+  mysql_data:
+  backend_uploads:
